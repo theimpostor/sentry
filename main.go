@@ -4,6 +4,7 @@ import (
 	"log"
 	// "time"
 
+	"flag"
 	"os"
 	"os/exec"
 
@@ -17,34 +18,48 @@ func runCmd(name string, args []string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	log.Println("Running", name)
+
 	// Start the command
 	if err := cmd.Start(); err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	// Wait for the command to finish
 	if err := cmd.Wait(); err != nil {
-		panic(err)
+		if exitError, ok := err.(*exec.ExitError); ok {
+			log.Println(name, "exited with error", exitError.ExitCode())
+		} else {
+			log.Fatal(err)
+		}
+	} else {
+		log.Println(name, "finished successfully")
 	}
 }
 
 func main() {
+	// Add a flag to specify the watched directory, otherwise use the current directory
+	var watchDir string
+	flag.StringVar(&watchDir, "d", ".", "Directory to watch")
+	flag.Parse()
+
 	// Make sure we have arguments, otherwise exit
-	if len(os.Args) < 2 {
-		panic("Please provide a command to execute")
+	if len(flag.Args()) < 1 {
+		log.Fatal("Please provide a command to execute")
 	}
 
-	// Get the command and arguments from os.Args
-	cmdName := os.Args[1]
-	cmdArgs := os.Args[2:]
+	log.Printf("Command to run: %+q\n", flag.Args())
+
+	cmdName := flag.Args()[0]
+	cmdArgs := flag.Args()[1:]
 
 	// Make the channel buffered to ensure no event is dropped. Notify will drop
 	// an event if the receiver is not able to keep up the sending pace.
 	c := make(chan notify.EventInfo, 1)
 
 	// Set up a watchpoint listening for events within a directory tree rooted
-	// at current working directory. Dispatch remove events to c.
-	if err := notify.Watch("./...", c, notify.All); err != nil {
+	// at watchDir. Dispatch remove events to c.
+	if err := notify.Watch(watchDir+"/...", c, notify.All); err != nil {
 		log.Fatal(err)
 	}
 	defer notify.Stop(c)
